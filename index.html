@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>A4 Layout to Word</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      /* Custom print styles to hide UI */
+      @media print {
+        @page { size: A4; margin: 0; }
+        body { background: white; }
+        .no-print { display: none !important; }
+        .print-force-show { display: block !important; }
+        .a4-page {
+          box-shadow: none !important;
+          margin: 0 !important;
+          border: none !important;
+          page-break-after: always;
+        }
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@^19.2.3",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "docx": "https://esm.sh/docx@^9.5.1",
+    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
+    "file-saver": "https://esm.sh/file-saver@^2.0.5",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/"
+  }
+}
+</script>
+</head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

@@ -1,0 +1,5 @@
+{
+  "name": "A4 Layout to Word",
+  "description": "A drag-and-drop A4 layout tool that exports directly to Microsoft Word (.docx) format.",
+  "requestFramePermissions": []
+}
