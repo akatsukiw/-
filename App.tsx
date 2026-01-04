@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Printer, FileDown, Type, Image as ImageIcon, Heading } from 'lucide-react';
+import { FileDown, Type, Image as ImageIcon, Heading } from 'lucide-react';
 import { Block, BlockType } from './types';
 import { BlockRenderer } from './components/BlockRenderer';
 import { exportToDocx } from './services/docxService';
@@ -14,6 +14,7 @@ function App() {
   
   // Drag and Drop State
   const [draggedBlockIndex, setDraggedBlockIndex] = useState<number | null>(null);
+  const [editingBlockId, setEditingBlockId] = useState<string | null>(null);
 
   // --- Actions ---
 
@@ -42,7 +43,8 @@ function App() {
     setBlocks(prev => [...prev, {
       id: generateId(),
       type: BlockType.TEXT_ROW,
-      content: 'New Text',
+      content: '新文本',
+      subContent: '备注信息' // Added default subContent
     }]);
   };
 
@@ -50,7 +52,7 @@ function App() {
     setBlocks(prev => [...prev, {
       id: generateId(),
       type: BlockType.TITLE,
-      content: 'Document Title'
+      content: '文档标题'
     }]);
   };
 
@@ -64,16 +66,45 @@ function App() {
 
   const handleExportDocx = async () => {
     try {
-      await exportToDocx(blocks, margin);
+      // Logic to determine filename:
+      // 1. Use Title block content if available.
+      // 2. Else, use first Text Row content.
+      // 3. Fallback to "导出文档".
+      
+      let filename = "导出文档";
+
+      // Find first valid Title block
+      const titleBlock = blocks.find(b => b.type === BlockType.TITLE && b.content && b.content.trim().length > 0 && b.content !== '文档标题');
+      
+      if (titleBlock) {
+        filename = titleBlock.content.trim();
+      } else {
+        // Find first valid Text Row
+        const textRow = blocks.find(b => b.type === BlockType.TEXT_ROW && b.content && b.content.trim().length > 0 && b.content !== '新文本');
+        if (textRow) {
+            filename = textRow.content.trim();
+        }
+      }
+
+      // Basic sanitization for filenames (replace illegal chars with underscore)
+      filename = filename.replace(/[<>:"/\\|?*]/g, '_');
+      
+      await exportToDocx(blocks, margin, filename);
+
     } catch (error) {
       console.error("Export failed", error);
-      alert("Failed to export Docx. Please check console.");
+      alert("导出失败，请检查控制台。");
     }
   };
 
   // --- Drag & Drop Logic ---
   
   const handleDragStart = (e: React.DragEvent, index: number) => {
+    // If we are editing, do not start drag (double safety, though draggable={false} should handle it)
+    if (editingBlockId !== null) {
+        e.preventDefault();
+        return;
+    }
     setDraggedBlockIndex(index);
     e.dataTransfer.effectAllowed = "move";
   };
@@ -83,9 +114,12 @@ function App() {
     if (draggedBlockIndex === null || draggedBlockIndex === index) return;
     
     const newBlocks = [...blocks];
-    const draggedItem = newBlocks[draggedBlockIndex];
-    newBlocks.splice(draggedBlockIndex, 1);
-    newBlocks.splice(index, 0, draggedItem);
+    
+    // Swap Logic: Exchange positions between dragged item and target item
+    // This differs from splice/insert which shifts items
+    const temp = newBlocks[draggedBlockIndex];
+    newBlocks[draggedBlockIndex] = newBlocks[index];
+    newBlocks[index] = temp;
     
     setBlocks(newBlocks);
     setDraggedBlockIndex(index);
@@ -106,24 +140,24 @@ function App() {
             onClick={() => fileInputRef.current?.click()}
             className="flex items-center gap-2 bg-black hover:bg-gray-800 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors shadow-sm"
           >
-            <ImageIcon size={16} /> Add Image
+            <ImageIcon size={16} /> 添加图片
           </button>
           <button 
             onClick={addTextRow}
             className="flex items-center gap-2 bg-white hover:bg-gray-50 text-black border border-gray-300 px-4 py-2 rounded-md text-sm font-medium transition-colors shadow-sm"
           >
-            <Type size={16} /> Add Text
+            <Type size={16} /> 添加文本
           </button>
           <button 
             onClick={addTitleRow}
             className="flex items-center gap-2 bg-white hover:bg-gray-50 text-black border border-gray-300 px-4 py-2 rounded-md text-sm font-medium transition-colors shadow-sm"
           >
-            <Heading size={16} /> Add Title
+            <Heading size={16} /> 添加标题
           </button>
         </div>
 
         <div className="flex items-center gap-3 pr-6 border-r border-gray-200">
-          <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Spacing</label>
+          <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">间距</label>
           <input 
             type="range" 
             min="0" 
@@ -137,16 +171,10 @@ function App() {
 
         <div className="flex gap-3">
             <button 
-                onClick={() => window.print()}
-                className="flex items-center gap-2 text-gray-700 hover:text-black px-3 py-2 rounded-md text-sm font-medium transition-colors"
-            >
-                <Printer size={16} /> Print
-            </button>
-            <button 
                 onClick={handleExportDocx}
                 className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors shadow-sm"
             >
-                <FileDown size={16} /> Export DOCX
+                <FileDown size={16} /> 导出文档
             </button>
         </div>
 
@@ -171,15 +199,16 @@ function App() {
         >
             {blocks.length === 0 && (
                 <div className="absolute inset-0 m-[10mm] flex flex-col items-center justify-center text-gray-300 border-2 border-dashed border-gray-100 rounded-lg pointer-events-none">
-                    <p className="font-medium">Canvas Empty</p>
-                    <p className="text-sm">Add images or text from the toolbar</p>
+                    <p className="font-medium">画布为空</p>
+                    <p className="text-sm">请从工具栏添加图片或文本</p>
                 </div>
             )}
 
             {blocks.map((block, index) => (
                 <div
                     key={block.id}
-                    draggable
+                    // Disable drag if this block is currently being edited
+                    draggable={editingBlockId !== block.id}
                     onDragStart={(e) => handleDragStart(e, index)}
                     onDragOver={(e) => handleDragOver(e, index)}
                     onDragEnd={handleDragEnd}
@@ -195,6 +224,8 @@ function App() {
                         onUpdate={updateBlock} 
                         onRemove={removeBlock}
                         isDragging={draggedBlockIndex === index}
+                        onEditStart={() => setEditingBlockId(block.id)}
+                        onEditEnd={() => setEditingBlockId(null)}
                     />
                 </div>
             ))}

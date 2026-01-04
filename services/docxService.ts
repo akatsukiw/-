@@ -9,10 +9,18 @@ import {
   TableCell, 
   WidthType,
   AlignmentType,
-  BorderStyle
+  BorderStyle,
+  TableLayoutType
 } from "docx";
 import FileSaver from "file-saver";
 import { Block, BlockType } from "../types";
+
+// Constants for A4 Layout in Twips (1/1440 inch)
+// 1mm approx 56.69 twips
+const PAGE_MARGIN = 567; // 10mm (1cm)
+const PAGE_WIDTH = 11906; // 210mm (A4 width)
+const CONTENT_WIDTH = PAGE_WIDTH - (PAGE_MARGIN * 2); // 10772
+const COLUMN_WIDTH = Math.floor(CONTENT_WIDTH / 2); // 5386
 
 // Helper to determine image type from blob type
 const getImageType = (mimeType: string): "png" | "jpg" | "gif" | "bmp" => {
@@ -97,7 +105,19 @@ const processImage = async (url: string, cropHeight?: number): Promise<{ data: A
   });
 };
 
-export const exportToDocx = async (blocks: Block[], margin: number) => {
+// Helper to get Aspect Ratio (H/W) for Docx scaling
+const getImageAspectRatio = (url: string): Promise<number> => {
+    return new Promise((resolve) => {
+        const img = new Image();
+        img.src = url;
+        img.onload = () => {
+            resolve(img.naturalHeight / img.naturalWidth);
+        };
+        img.onerror = () => resolve(1);
+    });
+};
+
+export const exportToDocx = async (blocks: Block[], margin: number, filename: string) => {
   const docChildren: (Paragraph | Table)[] = [];
   
   for (let i = 0; i < blocks.length; i++) {
@@ -121,18 +141,31 @@ export const exportToDocx = async (blocks: Block[], margin: number) => {
     } 
     
     else if (block.type === BlockType.TEXT_ROW) {
-      // Changed to simple paragraph, left aligned
+      // Export Text Row with Main content and Sub content
+      const runs = [
+          new TextRun({
+              text: block.content,
+              bold: true,
+              size: 24, // 12pt
+              color: "333333"
+          })
+      ];
+
+      if (block.subContent) {
+          // Add a tab or space separator
+          runs.push(new TextRun({ text: "    " })); 
+          runs.push(new TextRun({
+              text: block.subContent,
+              size: 20, // 10pt
+              color: "666666"
+          }));
+      }
+
       docChildren.push(
         new Paragraph({
             alignment: AlignmentType.LEFT,
             spacing: { before: 100, after: 100 },
-            children: [
-                new TextRun({
-                    text: block.content,
-                    size: 24, // 12pt
-                    color: "000000"
-                })
-            ]
+            children: runs
         })
       );
     } 
@@ -147,8 +180,10 @@ export const exportToDocx = async (blocks: Block[], margin: number) => {
         const img2 = await processImage(nextBlock.content, nextBlock.height);
 
         const table = new Table({
-            alignment: AlignmentType.CENTER,
-            width: { size: 100, type: WidthType.PERCENTAGE },
+            layout: TableLayoutType.FIXED, 
+            alignment: AlignmentType.CENTER, 
+            width: { size: CONTENT_WIDTH, type: WidthType.DXA },
+            columnWidths: [COLUMN_WIDTH, COLUMN_WIDTH], // Explicitly set column widths
             borders: {
                 top: { style: BorderStyle.NIL, size: 0, color: "auto" },
                 bottom: { style: BorderStyle.NIL, size: 0, color: "auto" },
@@ -161,22 +196,14 @@ export const exportToDocx = async (blocks: Block[], margin: number) => {
                 new TableRow({
                     children: [
                         new TableCell({
-                            width: { size: 50, type: WidthType.PERCENTAGE },
+                            width: { size: COLUMN_WIDTH, type: WidthType.DXA },
                             children: [
                                 new Paragraph({
-                                    alignment: AlignmentType.CENTER, // Center image in cell
+                                    alignment: AlignmentType.CENTER, 
                                     children: [
                                         new ImageRun({
                                             data: img1.data,
                                             transformation: { width: 300, height: block.height ? (300 * block.height / 354) : (300 * (await getImageAspectRatio(block.content))) }, 
-                                            // Note: If we don't have block.height, it's auto. 
-                                            // The processImage returns full or cropped buffer. 
-                                            // Docx needs width/height. We fix width to 300 (approx half page).
-                                            // Height should be proportional. 
-                                            // For simplicity, we can let docx handle ratio if we only set width? 
-                                            // docx usually requires both. We estimate height from the buffer aspect ratio if needed,
-                                            // or simplistically we trust the cropHeight logic. 
-                                            // If height is undefined in block, it was full scale.
                                             type: img1.type,
                                         })
                                     ]
@@ -184,10 +211,10 @@ export const exportToDocx = async (blocks: Block[], margin: number) => {
                             ]
                         }),
                         new TableCell({
-                            width: { size: 50, type: WidthType.PERCENTAGE },
+                            width: { size: COLUMN_WIDTH, type: WidthType.DXA },
                             children: [
                                 new Paragraph({
-                                    alignment: AlignmentType.CENTER, // Center image in cell
+                                    alignment: AlignmentType.CENTER, 
                                     children: [
                                         new ImageRun({
                                             data: img2.data,
@@ -207,8 +234,10 @@ export const exportToDocx = async (blocks: Block[], margin: number) => {
       } else {
         // Single Image
         const table = new Table({
+            layout: TableLayoutType.FIXED, 
             alignment: AlignmentType.CENTER,
-            width: { size: 100, type: WidthType.PERCENTAGE },
+            width: { size: CONTENT_WIDTH, type: WidthType.DXA },
+            columnWidths: [COLUMN_WIDTH, COLUMN_WIDTH],
             borders: {
                 top: { style: BorderStyle.NIL, size: 0, color: "auto" },
                 bottom: { style: BorderStyle.NIL, size: 0, color: "auto" },
@@ -221,10 +250,10 @@ export const exportToDocx = async (blocks: Block[], margin: number) => {
                 new TableRow({
                     children: [
                         new TableCell({
-                            width: { size: 50, type: WidthType.PERCENTAGE },
+                            width: { size: COLUMN_WIDTH, type: WidthType.DXA },
                             children: [
                                 new Paragraph({
-                                    alignment: AlignmentType.CENTER, // Center image
+                                    alignment: AlignmentType.CENTER, 
                                     children: [
                                         new ImageRun({
                                             data: img1.data,
@@ -235,7 +264,10 @@ export const exportToDocx = async (blocks: Block[], margin: number) => {
                                 })
                             ]
                         }),
-                        new TableCell({ width: { size: 50, type: WidthType.PERCENTAGE }, children: [] })
+                        new TableCell({ 
+                            width: { size: COLUMN_WIDTH, type: WidthType.DXA },
+                            children: [new Paragraph({})] // Empty paragraph to preserve cell structure
+                        })
                     ]
                 })
             ]
@@ -253,10 +285,10 @@ export const exportToDocx = async (blocks: Block[], margin: number) => {
         properties: {
             page: {
                 margin: {
-                    top: 567,
-                    bottom: 567,
-                    left: 567,
-                    right: 567
+                    top: PAGE_MARGIN,
+                    bottom: PAGE_MARGIN,
+                    left: PAGE_MARGIN,
+                    right: PAGE_MARGIN
                 }
             }
         },
@@ -266,17 +298,5 @@ export const exportToDocx = async (blocks: Block[], margin: number) => {
   });
 
   const blob = await Packer.toBlob(doc);
-  FileSaver.saveAs(blob, `export_${new Date().toISOString().slice(0,10)}.docx`);
-};
-
-// Helper to get Aspect Ratio (H/W) for Docx scaling
-const getImageAspectRatio = (url: string): Promise<number> => {
-    return new Promise((resolve) => {
-        const img = new Image();
-        img.src = url;
-        img.onload = () => {
-            resolve(img.naturalHeight / img.naturalWidth);
-        };
-        img.onerror = () => resolve(1);
-    });
+  FileSaver.saveAs(blob, `${filename}.docx`);
 };

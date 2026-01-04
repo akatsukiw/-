@@ -7,9 +7,18 @@ interface BlockRendererProps {
   onUpdate: (id: string, updates: Partial<Block>) => void;
   onRemove: (id: string) => void;
   isDragging?: boolean;
+  onEditStart?: () => void;
+  onEditEnd?: () => void;
 }
 
-export const BlockRenderer: React.FC<BlockRendererProps> = ({ block, onUpdate, onRemove, isDragging }) => {
+export const BlockRenderer: React.FC<BlockRendererProps> = ({ 
+  block, 
+  onUpdate, 
+  onRemove, 
+  isDragging,
+  onEditStart,
+  onEditEnd 
+}) => {
   const [imgHeight, setImgHeight] = useState<number | undefined>(block.height);
   const containerRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
@@ -24,8 +33,15 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({ block, onUpdate, o
     onRemove(block.id);
   };
 
-  const preventDrag = (e: React.MouseEvent) => {
+  // When user clicks input, notify parent to disable dragging
+  const handleInputMouseDown = (e: React.MouseEvent) => {
     e.stopPropagation();
+    onEditStart?.();
+  };
+
+  // When input loses focus, re-enable dragging
+  const handleInputBlur = () => {
+    onEditEnd?.();
   };
 
   // --- Resize/Crop Logic ---
@@ -34,35 +50,23 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({ block, onUpdate, o
     e.stopPropagation();
     
     const startY = e.clientY;
-    // Current visual height of the container
     const startHeight = containerRef.current?.clientHeight || 0;
-    
-    // The full height of the image if it wasn't cropped
-    // We can get this from the img element itself, which is rendered full width
     const fullImageHeight = imgRef.current?.getBoundingClientRect().height || 1000;
 
     const onMouseMove = (moveEvent: MouseEvent) => {
       const delta = moveEvent.clientY - startY;
-      // Calculate new height
       let newHeight = startHeight + delta;
-      
-      // Constraints:
-      // Min: 50px
-      // Max: fullImageHeight (cannot drag container larger than the image inside)
       newHeight = Math.max(50, Math.min(newHeight, fullImageHeight));
-      
       setImgHeight(newHeight);
     };
 
     const onMouseUp = (upEvent: MouseEvent) => {
-        // Calculate final height similar to mouse move to ensure consistency
         const delta = upEvent.clientY - startY;
         let finalHeight = startHeight + delta;
         const fullImageHeight = imgRef.current?.getBoundingClientRect().height || 1000;
         finalHeight = Math.max(50, Math.min(finalHeight, fullImageHeight));
 
         onUpdate(block.id, { height: finalHeight });
-      
         document.removeEventListener('mousemove', onMouseMove);
         document.removeEventListener('mouseup', onMouseUp);
     };
@@ -74,7 +78,7 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({ block, onUpdate, o
   if (block.type === BlockType.TITLE) {
     return (
       <div 
-        className={`group relative w-full border border-dashed border-gray-300 min-h-[50px] flex items-center justify-center hover:bg-gray-50 transition-colors ${isDragging ? 'opacity-50' : ''}`}
+        className={`group relative w-full border border-dashed border-gray-400 min-h-[50px] flex items-center justify-center hover:bg-gray-50 transition-colors ${isDragging ? 'opacity-50' : ''}`}
       >
         <button 
             onClick={handleDelete}
@@ -85,9 +89,11 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({ block, onUpdate, o
         <input 
           value={block.content}
           onChange={(e) => onUpdate(block.id, { content: e.target.value })}
-          onMouseDown={preventDrag}
-          className="text-center text-2xl font-extrabold text-black bg-transparent w-full outline-none focus:border-b focus:border-blue-500 placeholder-gray-400"
-          placeholder="Document Title"
+          onMouseDown={handleInputMouseDown}
+          onBlur={handleInputBlur}
+          className="text-center text-3xl font-extrabold text-[#111] bg-transparent outline-none border-b border-transparent focus:border-blue-500 focus:bg-white transition-colors py-2 max-w-full"
+          placeholder="文档标题"
+          style={{ width: `${Math.max((block.content.length || 0) + 1, 4)}em` }}
         />
       </div>
     );
@@ -96,7 +102,7 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({ block, onUpdate, o
   if (block.type === BlockType.TEXT_ROW) {
     return (
       <div 
-        className={`group relative w-full border border-dashed border-gray-300 px-4 py-2 flex items-center min-h-[40px] hover:bg-gray-50 transition-colors ${isDragging ? 'opacity-50' : ''}`}
+        className={`group relative w-full border border-dashed border-gray-400 px-4 py-1 flex items-baseline gap-4 min-h-[40px] hover:bg-gray-50 transition-colors ${isDragging ? 'opacity-50' : ''}`}
       >
         <button 
             onClick={handleDelete}
@@ -104,19 +110,27 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({ block, onUpdate, o
         >
           <X size={14} />
         </button>
-        <textarea 
+        
+        {/* Main Text Input: Auto width based on content */}
+        <input
           value={block.content}
           onChange={(e) => onUpdate(block.id, { content: e.target.value })}
-          onMouseDown={preventDrag}
-          rows={1}
-          className="w-full text-lg text-black bg-transparent outline-none focus:border-b focus:border-blue-500 resize-none overflow-hidden"
-          placeholder="Enter text here..."
-          style={{ height: 'auto' }}
-          onInput={(e) => {
-            // Auto-grow textarea
-            (e.target as HTMLTextAreaElement).style.height = 'auto';
-            (e.target as HTMLTextAreaElement).style.height = (e.target as HTMLTextAreaElement).scrollHeight + 'px';
-          }}
+          onMouseDown={handleInputMouseDown}
+          onBlur={handleInputBlur}
+          className="text-xl font-bold text-[#333] bg-transparent outline-none border-b border-dashed border-transparent focus:border-blue-500 focus:bg-white"
+          placeholder="姓名/标题"
+          style={{ width: `${Math.max((block.content.length || 0) + 1, 4)}em` }} 
+        />
+
+        {/* Sub Text Input: Auto width, removed flex-grow so user can click empty space to drag */}
+        <input
+          value={block.subContent || ''}
+          onChange={(e) => onUpdate(block.id, { subContent: e.target.value })}
+          onMouseDown={handleInputMouseDown}
+          onBlur={handleInputBlur}
+          className="text-sm text-[#666] bg-transparent outline-none border-b border-dashed border-transparent focus:border-blue-500 focus:bg-white"
+          placeholder="备注信息"
+          style={{ width: `${Math.max((block.subContent?.length || 0) + 1, 4)}em` }} 
         />
       </div>
     );
@@ -127,7 +141,6 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({ block, onUpdate, o
       <div 
         ref={containerRef}
         className={`group relative w-full border border-dashed border-gray-300 bg-white hover:border-blue-400 overflow-hidden select-none ${isDragging ? 'opacity-50' : ''}`}
-        // If height is undefined, use 'auto' to show full image. If set, use pixel value to crop.
         style={{ height: imgHeight ? `${imgHeight}px` : 'auto' }}
       >
         <button 
@@ -137,9 +150,6 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({ block, onUpdate, o
           <X size={14} />
         </button>
         
-        {/* Image: Width 100%, Height Auto to maintain aspect ratio. 
-            The container simply cuts off the bottom if height < natural height. 
-        */}
         <img 
             ref={imgRef}
             src={block.content} 
@@ -147,7 +157,6 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({ block, onUpdate, o
             className="w-full h-auto block pointer-events-none"
         />
 
-        {/* Resize Handle */}
         <div 
           onMouseDown={handleMouseDownResize}
           className="absolute bottom-0 left-0 w-full h-5 bg-black/10 hover:bg-blue-500/50 cursor-ns-resize flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10"
