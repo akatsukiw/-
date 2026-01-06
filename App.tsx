@@ -580,7 +580,7 @@ function App() {
                                 </div>
                                 <div className="pb-4">
                                     <h4 className="text-base font-bold text-gray-800">拖拽逻辑优化</h4>
-                                    <p className="text-sm text-gray-500 mb-1">2024.01</p>
+                                    <p className="text-sm text-gray-500 mb-1">2026.01.07</p>
                                     <p className="text-sm text-gray-600 leading-relaxed">
                                         区分了“交换”与“插入”操作。现在拖拽图片到另一张图片时会显示<span className="text-blue-600 font-medium">蓝色框</span>（交换），拖到文本时显示<span className="text-green-600 font-medium">绿色线</span>（插入）。
                                     </p>
@@ -597,7 +597,7 @@ function App() {
                                 </div>
                                 <div className="pb-4">
                                     <h4 className="text-base font-bold text-gray-800">智能统计与命名</h4>
-                                    <p className="text-sm text-gray-500 mb-1">2024.01</p>
+                                    <p className="text-sm text-gray-500 mb-1">2026.01.07</p>
                                     <ul className="text-sm text-gray-600 leading-relaxed list-disc list-inside space-y-1">
                                         <li>自动统计文本行下方的图片数量，并更新“好评x次”。</li>
                                         <li>保存工程与导出文档时，自动使用标题或首行文本作为文件名。</li>
@@ -614,7 +614,7 @@ function App() {
                                 </div>
                                 <div>
                                     <h4 className="text-base font-bold text-gray-800">全新 UI 设计</h4>
-                                    <p className="text-sm text-gray-500 mb-1">2024.01</p>
+                                    <p className="text-sm text-gray-500 mb-1">2026.01.07</p>
                                     <p className="text-sm text-gray-600 leading-relaxed">
                                         采用了悬浮式工具栏设计，优化了间距调节控件，整体视觉更现代。
                                     </p>
