@@ -600,6 +600,23 @@ function App() {
                     {/* --- TAB: UPDATES --- */}
                     {helpTab === 'updates' && (
                         <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
+                             {/* Item 0 (New) */}
+                             <div className="flex gap-4">
+                                <div className="flex flex-col items-center">
+                                    <div className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+                                        <Scissors size={16} />
+                                    </div>
+                                    <div className="w-[2px] h-full bg-emerald-50 mt-2"></div>
+                                </div>
+                                <div className="pb-4">
+                                    <h4 className="text-base font-bold text-gray-800">裁切体验优化</h4>
+                                    <p className="text-sm text-gray-500 mb-1">2026.01.07</p>
+                                    <p className="text-sm text-gray-600 leading-relaxed">
+                                        优化了图片裁切时的页面布局稳定性。现在向上拖动裁切时，A4纸张高度不会实时塌缩，防止页面跳动，操作更流畅。
+                                    </p>
+                                </div>
+                             </div>
+
                              {/* Item 1 */}
                              <div className="flex gap-4">
                                 <div className="flex flex-col items-center">

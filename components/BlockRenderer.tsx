@@ -20,6 +20,9 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
   onEditEnd 
 }) => {
   const [imgHeight, setImgHeight] = useState<number | undefined>(block.height);
+  const [isResizing, setIsResizing] = useState(false);
+  const resizeStartHeight = useRef<number>(0);
+  
   const containerRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
 
@@ -50,23 +53,30 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
     e.stopPropagation();
     
     const startY = e.clientY;
-    const startHeight = containerRef.current?.clientHeight || 0;
+    const currentHeight = containerRef.current?.clientHeight || 0;
+    
+    // Lock layout height to prevent page jumping during crop
+    setIsResizing(true);
+    resizeStartHeight.current = currentHeight;
+
     const fullImageHeight = imgRef.current?.getBoundingClientRect().height || 1000;
 
     const onMouseMove = (moveEvent: MouseEvent) => {
       const delta = moveEvent.clientY - startY;
-      let newHeight = startHeight + delta;
+      let newHeight = currentHeight + delta;
       newHeight = Math.max(50, Math.min(newHeight, fullImageHeight));
       setImgHeight(newHeight);
     };
 
     const onMouseUp = (upEvent: MouseEvent) => {
         const delta = upEvent.clientY - startY;
-        let finalHeight = startHeight + delta;
+        let finalHeight = currentHeight + delta;
         const fullImageHeight = imgRef.current?.getBoundingClientRect().height || 1000;
         finalHeight = Math.max(50, Math.min(finalHeight, fullImageHeight));
 
         onUpdate(block.id, { height: finalHeight });
+        setIsResizing(false);
+        
         document.removeEventListener('mousemove', onMouseMove);
         document.removeEventListener('mouseup', onMouseUp);
     };
@@ -139,29 +149,34 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
   if (block.type === BlockType.IMAGE) {
     return (
       <div 
-        ref={containerRef}
-        className={`group relative w-full border border-dashed border-gray-300 bg-white hover:border-blue-400 overflow-hidden select-none ${isDragging ? 'opacity-50' : ''}`}
-        style={{ height: imgHeight ? `${imgHeight}px` : 'auto' }}
+        className="w-full relative" 
+        style={{ minHeight: isResizing ? `${resizeStartHeight.current}px` : 'auto' }}
       >
-        <button 
-            onClick={handleDelete}
-            className="absolute top-1 right-1 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-20"
-        >
-          <X size={14} />
-        </button>
-        
-        <img 
-            ref={imgRef}
-            src={block.content} 
-            alt="Uploaded" 
-            className="w-full h-auto block pointer-events-none"
-        />
-
         <div 
-          onMouseDown={handleMouseDownResize}
-          className="absolute bottom-0 left-0 w-full h-5 bg-black/10 hover:bg-blue-500/50 cursor-ns-resize flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10"
+            ref={containerRef}
+            className={`group relative w-full border border-dashed border-gray-300 bg-white hover:border-blue-400 overflow-hidden select-none ${isDragging ? 'opacity-50' : ''}`}
+            style={{ height: imgHeight ? `${imgHeight}px` : 'auto' }}
         >
-          <GripHorizontal size={16} className="text-white drop-shadow-md" />
+            <button 
+                onClick={handleDelete}
+                className="absolute top-1 right-1 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-20"
+            >
+            <X size={14} />
+            </button>
+            
+            <img 
+                ref={imgRef}
+                src={block.content} 
+                alt="Uploaded" 
+                className="w-full h-auto block pointer-events-none"
+            />
+
+            <div 
+            onMouseDown={handleMouseDownResize}
+            className="absolute bottom-0 left-0 w-full h-5 bg-black/10 hover:bg-blue-500/50 cursor-ns-resize flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10"
+            >
+            <GripHorizontal size={16} className="text-white drop-shadow-md" />
+            </div>
         </div>
       </div>
     );
