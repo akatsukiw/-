@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { FileDown, Type, Image as ImageIcon, Heading, Save, FolderOpen } from 'lucide-react';
+import { FileDown, Type, Image as ImageIcon, Heading, Save, FolderOpen, MoveHorizontal, HelpCircle, X, MousePointerClick, Scissors, RefreshCw, ArrowDownToLine, Sparkles, History, BookOpen } from 'lucide-react';
 import { Block, BlockType } from './types';
 import { BlockRenderer } from './components/BlockRenderer';
 import { exportToDocx } from './services/docxService';
@@ -26,6 +26,8 @@ const blobUrlToBase64 = async (blobUrl: string): Promise<string> => {
 function App() {
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [margin, setMargin] = useState(5);
+  const [showHelp, setShowHelp] = useState(false);
+  const [helpTab, setHelpTab] = useState<'guide' | 'updates'>('guide'); // 'guide' or 'updates'
   const fileInputRef = useRef<HTMLInputElement>(null);
   const jsonInputRef = useRef<HTMLInputElement>(null);
   
@@ -117,7 +119,48 @@ function App() {
     setBlocksWithCount(prev => prev.filter(b => b.id !== id));
   };
 
+  // --- Margin Scrubber Logic ---
+  const handleMarginScrub = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startMargin = margin;
+    
+    const onMouseMove = (me: MouseEvent) => {
+        const delta = Math.floor((me.clientX - startX) / 2); // Divide by 2 for smoother control
+        const newMargin = Math.max(0, Math.min(50, startMargin + delta));
+        setMargin(newMargin);
+    };
+
+    const onMouseUp = () => {
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+        document.body.style.cursor = 'default';
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+    document.body.style.cursor = 'ew-resize';
+  };
+
   // --- Save / Load Project ---
+
+  const getSmartFilename = () => {
+    let filename = "layout-project";
+    
+    // 1. Try Title Block
+    const titleBlock = blocks.find(b => b.type === BlockType.TITLE && b.content && b.content.trim().length > 0 && b.content !== '文档标题');
+    if (titleBlock) {
+      filename = titleBlock.content.trim();
+    } else {
+      // 2. Try Text Row (Main Content)
+      const textRow = blocks.find(b => b.type === BlockType.TEXT_ROW && b.content && b.content.trim().length > 0 && b.content !== '新文本');
+      if (textRow) {
+          filename = textRow.content.trim();
+      }
+    }
+    // Sanitize filename
+    return filename.replace(/[<>:"/\\|?*]/g, '_');
+  };
 
   const handleSaveProject = async () => {
     try {
@@ -135,8 +178,9 @@ function App() {
         blocks: portableBlocks
       };
 
+      const filename = getSmartFilename();
       const blob = new Blob([JSON.stringify(projectData)], { type: "application/json;charset=utf-8" });
-      FileSaver.saveAs(blob, "layout-project.json");
+      FileSaver.saveAs(blob, `${filename}.json`);
     } catch (error) {
       console.error("Save failed", error);
       alert("保存失败");
@@ -167,17 +211,7 @@ function App() {
 
   const handleExportDocx = async () => {
     try {
-      let filename = "导出文档";
-      const titleBlock = blocks.find(b => b.type === BlockType.TITLE && b.content && b.content.trim().length > 0 && b.content !== '文档标题');
-      if (titleBlock) {
-        filename = titleBlock.content.trim();
-      } else {
-        const textRow = blocks.find(b => b.type === BlockType.TEXT_ROW && b.content && b.content.trim().length > 0 && b.content !== '新文本');
-        if (textRow) {
-            filename = textRow.content.trim();
-        }
-      }
-      filename = filename.replace(/[<>:"/\\|?*]/g, '_');
+      const filename = getSmartFilename();
       await exportToDocx(blocks, margin, filename);
     } catch (error) {
       console.error("Export failed", error);
@@ -263,9 +297,17 @@ function App() {
             } else {
                 // Insert/Push logic: Standard reorder
                 const [movedItem] = newBlocks.splice(draggedBlockIndex, 1);
-                // Adjust index if dragging from top to bottom
-                // But splice-then-splice is safer than index math usually
-                newBlocks.splice(dropIndex, 0, movedItem);
+                
+                // Fix: When dragging downwards (e.g., from index 0 to index 5), 
+                // removing item at 0 shifts all subsequent items (1->0, 2->1, ... 5->4).
+                // The target dropIndex (5) now refers to what was originally at 6, or simply is off by one relative to the new array.
+                // Visually, the green line is "Before Target". 
+                // If dragged < drop, the target has shifted left by 1. So we must insert at dropIndex - 1.
+                let insertIndex = dropIndex;
+                if (draggedBlockIndex < dropIndex) {
+                    insertIndex -= 1;
+                }
+                newBlocks.splice(insertIndex, 0, movedItem);
             }
             return newBlocks;
         });
@@ -312,72 +354,290 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#333333] flex flex-col items-center py-5 font-sans">
+    <div className="min-h-screen bg-[#333333] flex flex-col items-center py-5 font-sans relative">
+      <style>{`
+        /* Hide Spinner for Number Input */
+        input[type=number]::-webkit-inner-spin-button, 
+        input[type=number]::-webkit-outer-spin-button { 
+          -webkit-appearance: none; 
+          margin: 0; 
+        }
+        input[type=number] {
+          -moz-appearance: textfield;
+        }
+      `}</style>
       
-      {/* --- Toolbar --- */}
-      <div className="bg-white px-6 py-3 rounded-lg shadow-xl mb-8 sticky top-4 z-50 flex flex-wrap gap-6 items-center border border-gray-200">
-        
-        <div className="flex items-center gap-3 pr-6 border-r border-gray-200">
-          <button 
-            onClick={() => jsonInputRef.current?.click()}
-            className="flex items-center gap-2 text-gray-700 hover:text-black hover:bg-gray-100 px-3 py-2 rounded-md text-sm font-medium transition-colors"
-            title="导入工程 (.json)"
-          >
-            <FolderOpen size={16} /> 导入
-          </button>
-          <button 
-            onClick={handleSaveProject}
-            className="flex items-center gap-2 text-gray-700 hover:text-black hover:bg-gray-100 px-3 py-2 rounded-md text-sm font-medium transition-colors"
-            title="保存工程 (.json)"
-          >
-            <Save size={16} /> 保存
-          </button>
-        </div>
+      {/* --- Modern Floating Toolbar --- */}
+      <div className="sticky top-4 z-50 mb-8 mx-auto">
+        <div className="flex items-center gap-1.5 p-2 bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-gray-100/50">
+          
+          {/* Group 1: File Operations (Colored) */}
+          <div className="flex items-center gap-1.5 px-1">
+             <button 
+                onClick={() => jsonInputRef.current?.click()}
+                className="flex flex-col items-center justify-center w-12 h-12 gap-1 text-orange-600 bg-orange-50 hover:bg-orange-100 rounded-xl transition-all duration-200 border border-orange-100 group"
+                title="导入工程"
+              >
+                <FolderOpen size={18} className="group-hover:scale-110 transition-transform" />
+                <span className="text-[10px] font-medium leading-none">导入</span>
+              </button>
+              <button 
+                onClick={handleSaveProject}
+                className="flex flex-col items-center justify-center w-12 h-12 gap-1 text-emerald-600 bg-emerald-50 hover:bg-emerald-100 rounded-xl transition-all duration-200 border border-emerald-100 group"
+                title="保存工程"
+              >
+                <Save size={18} className="group-hover:scale-110 transition-transform" />
+                <span className="text-[10px] font-medium leading-none">保存</span>
+              </button>
+          </div>
 
-        <div className="flex items-center gap-3 pr-6 border-r border-gray-200">
-          <button 
-            onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-2 bg-black hover:bg-gray-800 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors shadow-sm"
-          >
-            <ImageIcon size={16} /> 添加图片
-          </button>
-          <button 
-            onClick={addTextRow}
-            className="flex items-center gap-2 bg-white hover:bg-gray-50 text-black border border-gray-300 px-4 py-2 rounded-md text-sm font-medium transition-colors shadow-sm"
-          >
-            <Type size={16} /> 添加文本
-          </button>
-          <button 
-            onClick={addTitleRow}
-            className="flex items-center gap-2 bg-white hover:bg-gray-50 text-black border border-gray-300 px-4 py-2 rounded-md text-sm font-medium transition-colors shadow-sm"
-          >
-            <Heading size={16} /> 添加标题
-          </button>
-        </div>
+          <div className="w-[1px] h-8 bg-gray-200 mx-1"></div>
 
-        <div className="flex items-center gap-3 pr-6 border-r border-gray-200">
-          <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">间距</label>
-          <input 
-            type="range" 
-            min="0" 
-            max="50" 
-            value={margin} 
-            onChange={(e) => setMargin(Number(e.target.value))}
-            className="w-24 cursor-pointer accent-black"
-          />
-          <span className="text-sm font-mono text-gray-600 w-8 text-right">{margin}</span>
-        </div>
-
-        <div className="flex gap-3">
+          {/* Group 2: Insert Tools */}
+          <div className="flex items-center gap-1.5 px-1">
             <button 
-                onClick={handleExportDocx}
-                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors shadow-sm"
+              onClick={() => fileInputRef.current?.click()}
+              className="flex flex-col items-center justify-center w-12 h-12 gap-1 text-gray-700 hover:text-black hover:bg-gray-100 rounded-xl transition-all duration-200 group"
+              title="添加图片"
             >
-                <FileDown size={16} /> 导出Word
+              <ImageIcon size={20} className="group-hover:scale-110 transition-transform" />
+              <span className="text-[10px] font-medium leading-none text-gray-500 group-hover:text-black">图片</span>
             </button>
-        </div>
+            <button 
+              onClick={addTextRow}
+              className="flex flex-col items-center justify-center w-12 h-12 gap-1 text-gray-700 hover:text-black hover:bg-gray-100 rounded-xl transition-all duration-200 group"
+              title="添加文本行"
+            >
+              <Type size={20} className="group-hover:scale-110 transition-transform" />
+              <span className="text-[10px] font-medium leading-none text-gray-500 group-hover:text-black">文本</span>
+            </button>
+            <button 
+              onClick={addTitleRow}
+              className="flex flex-col items-center justify-center w-12 h-12 gap-1 text-gray-700 hover:text-black hover:bg-gray-100 rounded-xl transition-all duration-200 group"
+              title="添加标题"
+            >
+              <Heading size={20} className="group-hover:scale-110 transition-transform" />
+              <span className="text-[10px] font-medium leading-none text-gray-500 group-hover:text-black">标题</span>
+            </button>
+          </div>
 
-        <input 
+          <div className="w-[1px] h-8 bg-gray-200 mx-1"></div>
+
+          {/* Group 3: Margin Control (Clean & Scrubbable) */}
+          <div className="flex flex-col justify-center px-2 min-w-[60px]">
+             <div 
+                className="flex items-center gap-1 text-gray-400 hover:text-blue-500 cursor-ew-resize select-none transition-colors group py-1"
+                onMouseDown={handleMarginScrub}
+                title="按住左右拖动调整"
+             >
+                <MoveHorizontal size={12} />
+                <span className="text-[10px] font-bold uppercase tracking-wider">间距</span>
+             </div>
+             <input 
+                type="number" 
+                min="0" 
+                max="50"
+                value={margin}
+                onChange={(e) => setMargin(Number(e.target.value))}
+                className="w-full text-center text-sm font-semibold text-gray-700 bg-transparent border-none focus:ring-0 p-0 m-0 hover:text-black appearance-none"
+             />
+          </div>
+
+          <div className="w-[1px] h-8 bg-gray-200 mx-1"></div>
+
+          {/* Group 4: Export & Help */}
+          <div className="flex items-center gap-2 px-1">
+             <button 
+                onClick={handleExportDocx}
+                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white pl-4 pr-5 py-2.5 rounded-xl text-sm font-semibold shadow-md shadow-blue-200 transition-all active:scale-95"
+            >
+                <FileDown size={18} />
+                导出 Word
+            </button>
+            
+            <button 
+                onClick={() => { setShowHelp(true); setHelpTab('guide'); }}
+                className="flex items-center justify-center w-10 h-10 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-full transition-all"
+                title="使用帮助"
+            >
+                <HelpCircle size={20} />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* --- Help / Updates Modal --- */}
+      {showHelp && (
+        <div 
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+            onClick={() => setShowHelp(false)}
+        >
+            <div 
+                className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden border border-gray-100 animate-in zoom-in-95 duration-200"
+                onClick={e => e.stopPropagation()}
+            >
+                {/* Modal Header & Tabs */}
+                <div className="flex flex-col border-b border-gray-100 bg-gray-50/50">
+                    <div className="flex items-center justify-between p-4 pb-2">
+                        <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                           <div className="bg-blue-100 p-1.5 rounded-lg text-blue-600">
+                                {helpTab === 'guide' ? <BookOpen size={18} /> : <Sparkles size={18} />}
+                           </div>
+                           {helpTab === 'guide' ? '操作指南' : '更新日志'}
+                        </h3>
+                        <button onClick={() => setShowHelp(false)} className="text-gray-400 hover:text-black hover:bg-gray-100 p-1 rounded-full transition-colors">
+                            <X size={20} />
+                        </button>
+                    </div>
+
+                    {/* Tabs */}
+                    <div className="flex px-4 gap-6 text-sm font-medium">
+                        <button 
+                            onClick={() => setHelpTab('guide')}
+                            className={`pb-2 border-b-2 transition-colors ${helpTab === 'guide' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                        >
+                            操作指南
+                        </button>
+                        <button 
+                            onClick={() => setHelpTab('updates')}
+                            className={`pb-2 border-b-2 transition-colors ${helpTab === 'updates' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                        >
+                            最近更新
+                        </button>
+                    </div>
+                </div>
+                
+                {/* Modal Body */}
+                <div className="p-6 min-h-[300px]">
+                    
+                    {/* --- TAB: GUIDE --- */}
+                    {helpTab === 'guide' && (
+                        <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
+                            {/* Tip 1: Color Codes */}
+                            <div className="flex gap-4">
+                                <div className="mt-1">
+                                    <RefreshCw className="text-blue-500" size={24} />
+                                </div>
+                                <div>
+                                    <h4 className="text-base font-bold text-gray-800 mb-1">拖拽颜色指示</h4>
+                                    <div className="space-y-2 text-sm text-gray-600 leading-relaxed">
+                                        <p className="flex items-center gap-2">
+                                            <span className="w-3 h-3 rounded-full bg-blue-500 inline-block shadow-sm"></span>
+                                            <strong className="text-blue-600">蓝色边框：</strong> 
+                                            交换位置 (图片 ⇄ 图片)。
+                                        </p>
+                                        <p className="flex items-center gap-2">
+                                            <span className="w-3 h-3 rounded-full bg-green-500 inline-block shadow-sm"></span>
+                                            <strong className="text-green-600">绿色横线：</strong> 
+                                            插入/挤压位置。
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="h-[1px] bg-gray-100 w-full"></div>
+
+                            {/* Tip 2: Crop */}
+                            <div className="flex gap-4">
+                                <div className="mt-1">
+                                    <Scissors className="text-orange-500" size={24} />
+                                </div>
+                                <div>
+                                    <h4 className="text-base font-bold text-gray-800 mb-1">图片裁切</h4>
+                                    <p className="text-sm text-gray-600 leading-relaxed">
+                                        鼠标移动到图片<strong className="text-gray-900 bg-gray-100 px-1 rounded">底部边缘</strong>，按住并向上拖动，可以裁切高度（用于去除无关底部）。
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="h-[1px] bg-gray-100 w-full"></div>
+
+                            {/* Tip 3: Margin */}
+                            <div className="flex gap-4">
+                                <div className="mt-1">
+                                    <ArrowDownToLine className="text-purple-500" size={24} />
+                                </div>
+                                <div>
+                                    <h4 className="text-base font-bold text-gray-800 mb-1">快速调整间距</h4>
+                                    <p className="text-sm text-gray-600 leading-relaxed">
+                                        在工具栏上，按住 <strong className="bg-gray-100 px-1 py-0.5 rounded text-gray-700 text-xs uppercase">↔ 间距</strong> 标签并左右拖动，或直接输入数字。
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* --- TAB: UPDATES --- */}
+                    {helpTab === 'updates' && (
+                        <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
+                             {/* Item 1 */}
+                             <div className="flex gap-4">
+                                <div className="flex flex-col items-center">
+                                    <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                                        <MousePointerClick size={16} />
+                                    </div>
+                                    <div className="w-[2px] h-full bg-blue-50 mt-2"></div>
+                                </div>
+                                <div className="pb-4">
+                                    <h4 className="text-base font-bold text-gray-800">拖拽逻辑优化</h4>
+                                    <p className="text-sm text-gray-500 mb-1">2024.01</p>
+                                    <p className="text-sm text-gray-600 leading-relaxed">
+                                        区分了“交换”与“插入”操作。现在拖拽图片到另一张图片时会显示<span className="text-blue-600 font-medium">蓝色框</span>（交换），拖到文本时显示<span className="text-green-600 font-medium">绿色线</span>（插入）。
+                                    </p>
+                                </div>
+                             </div>
+
+                             {/* Item 2 */}
+                             <div className="flex gap-4">
+                                <div className="flex flex-col items-center">
+                                    <div className="w-8 h-8 rounded-full bg-orange-50 text-orange-600 flex items-center justify-center shrink-0">
+                                        <Sparkles size={16} />
+                                    </div>
+                                    <div className="w-[2px] h-full bg-orange-50 mt-2"></div>
+                                </div>
+                                <div className="pb-4">
+                                    <h4 className="text-base font-bold text-gray-800">智能统计与命名</h4>
+                                    <p className="text-sm text-gray-500 mb-1">2024.01</p>
+                                    <ul className="text-sm text-gray-600 leading-relaxed list-disc list-inside space-y-1">
+                                        <li>自动统计文本行下方的图片数量，并更新“好评x次”。</li>
+                                        <li>保存工程与导出文档时，自动使用标题或首行文本作为文件名。</li>
+                                    </ul>
+                                </div>
+                             </div>
+
+                             {/* Item 3 */}
+                             <div className="flex gap-4">
+                                <div className="flex flex-col items-center">
+                                    <div className="w-8 h-8 rounded-full bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
+                                        <MoveHorizontal size={16} />
+                                    </div>
+                                </div>
+                                <div>
+                                    <h4 className="text-base font-bold text-gray-800">全新 UI 设计</h4>
+                                    <p className="text-sm text-gray-500 mb-1">2024.01</p>
+                                    <p className="text-sm text-gray-600 leading-relaxed">
+                                        采用了悬浮式工具栏设计，优化了间距调节控件，整体视觉更现代。
+                                    </p>
+                                </div>
+                             </div>
+                        </div>
+                    )}
+                </div>
+
+                {/* Footer */}
+                <div className="p-4 bg-gray-50 border-t border-gray-100 text-center">
+                    <button 
+                        onClick={() => setShowHelp(false)}
+                        className="text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline"
+                    >
+                        关闭窗口
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
+
+      <input 
           type="file" 
           ref={fileInputRef} 
           hidden 
@@ -385,14 +645,13 @@ function App() {
           accept="image/*" 
           onChange={handleImageUpload} 
         />
-        <input 
+      <input 
           type="file" 
           ref={jsonInputRef} 
           hidden 
           accept=".json" 
           onChange={handleLoadProject} 
-        />
-      </div>
+      />
 
       {/* --- Page Container --- */}
       <div id="page-container" className="flex flex-col items-center w-full overflow-y-auto pb-10">
