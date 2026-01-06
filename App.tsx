@@ -31,7 +31,45 @@ function App() {
   
   // Drag and Drop State
   const [draggedBlockIndex, setDraggedBlockIndex] = useState<number | null>(null);
+  const [targetBlockIndex, setTargetBlockIndex] = useState<number | null>(null); // Track where we are hovering
   const [editingBlockId, setEditingBlockId] = useState<string | null>(null);
+
+  // --- Auto Count Logic ---
+  const recalculateCounts = (currentBlocks: Block[]): Block[] => {
+    let currentTextRowId: string | null = null;
+    const counts: Record<string, number> = {};
+
+    // Pass 1: Count images per Text Row
+    for (const block of currentBlocks) {
+      if (block.type === BlockType.TEXT_ROW) {
+        currentTextRowId = block.id;
+        counts[currentTextRowId] = 0;
+      } else if (block.type === BlockType.IMAGE && currentTextRowId) {
+        counts[currentTextRowId]++;
+      }
+    }
+
+    // Pass 2: Update subContent
+    return currentBlocks.map(block => {
+      if (block.type === BlockType.TEXT_ROW) {
+        const count = counts[block.id] || 0;
+        const newSubContent = `好评${count}次`;
+        if (block.subContent !== newSubContent) {
+          return { ...block, subContent: newSubContent };
+        }
+      }
+      return block;
+    });
+  };
+
+  const setBlocksWithCount = (newBlocksOrUpdater: Block[] | ((prev: Block[]) => Block[])) => {
+    setBlocks(prev => {
+      const nextBlocks = typeof newBlocksOrUpdater === 'function' 
+        ? newBlocksOrUpdater(prev) 
+        : newBlocksOrUpdater;
+      return recalculateCounts(nextBlocks);
+    });
+  };
 
   // --- Actions ---
 
@@ -49,17 +87,17 @@ function App() {
           });
         }
       });
-      setBlocks(prev => [...prev, ...newBlocks]);
+      setBlocksWithCount(prev => [...prev, ...newBlocks]);
     }
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const addTextRow = () => {
-    setBlocks(prev => [...prev, {
+    setBlocksWithCount(prev => [...prev, {
       id: generateId(),
       type: BlockType.TEXT_ROW,
       content: '新文本',
-      subContent: '备注信息'
+      subContent: '好评0次'
     }]);
   };
 
@@ -76,14 +114,13 @@ function App() {
   };
 
   const removeBlock = (id: string) => {
-    setBlocks(prev => prev.filter(b => b.id !== id));
+    setBlocksWithCount(prev => prev.filter(b => b.id !== id));
   };
 
   // --- Save / Load Project ---
 
   const handleSaveProject = async () => {
     try {
-      // Convert all image contents to Base64 so the JSON file works offline/on other computers
       const portableBlocks = await Promise.all(blocks.map(async (b) => {
         if (b.type === BlockType.IMAGE) {
           const base64 = await blobUrlToBase64(b.content);
@@ -114,7 +151,7 @@ function App() {
         try {
           const json = JSON.parse(event.target?.result as string);
           if (json.blocks) {
-            setBlocks(json.blocks);
+            setBlocks(recalculateCounts(json.blocks));
           }
           if (json.margin !== undefined) {
             setMargin(json.margin);
@@ -157,41 +194,92 @@ function App() {
     }
     setDraggedBlockIndex(index);
     e.dataTransfer.effectAllowed = "move";
-    // Important: Set data type to distinguish from file drag
     e.dataTransfer.setData("application/react-dnd-internal", "true");
   };
 
   const handleDragOver = (e: React.DragEvent, index: number) => {
-    e.preventDefault(); // Allow dropping
+    e.preventDefault(); // Necessary to allow dropping
 
-    // 1. If dragging files from OS, do nothing here (wait for Drop)
+    // External files
     if (e.dataTransfer.types.includes("Files")) {
         e.dataTransfer.dropEffect = "copy";
+        setTargetBlockIndex(index); 
         return;
     }
 
-    // 2. Internal Reorder (Swap) Logic
-    if (draggedBlockIndex === null || draggedBlockIndex === index) return;
-    
-    // Only swap if we are dragging an internal item
-    const newBlocks = [...blocks];
-    const temp = newBlocks[draggedBlockIndex];
-    newBlocks[draggedBlockIndex] = newBlocks[index];
-    newBlocks[index] = temp;
-    
-    setBlocks(newBlocks);
-    setDraggedBlockIndex(index);
+    // Internal Drag
+    if (draggedBlockIndex !== null && draggedBlockIndex !== index) {
+       setTargetBlockIndex(index);
+       e.dataTransfer.dropEffect = "move";
+    }
   };
 
   const handleDragEnd = () => {
     setDraggedBlockIndex(null);
+    setTargetBlockIndex(null);
   };
 
-  // Handle drop on the container for External Files
+  // Handler for dropping ONTO a specific block
+  const handleBlockDrop = (e: React.DragEvent, dropIndex: number) => {
+    e.preventDefault();
+    e.stopPropagation(); // Stop bubbling to container
+
+    // 1. Handle External File Drop -> Always Insert (Green style logic)
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        const files = Array.from(e.dataTransfer.files).filter((f) => (f as File).type.startsWith('image/')) as File[];
+        if (files.length > 0) {
+            const newBlocks: Block[] = files.map(file => ({
+                id: generateId(),
+                type: BlockType.IMAGE,
+                content: URL.createObjectURL(file),
+            }));
+
+            setBlocksWithCount(prev => {
+                const updatedBlocks = [...prev];
+                updatedBlocks.splice(dropIndex, 0, ...newBlocks);
+                return updatedBlocks;
+            });
+        }
+        setTargetBlockIndex(null);
+        return;
+    }
+
+    // 2. Handle Internal Drop
+    if (draggedBlockIndex !== null && draggedBlockIndex !== dropIndex) {
+        const sourceBlock = blocks[draggedBlockIndex];
+        const targetBlock = blocks[dropIndex];
+
+        // Logic Check: Swap or Insert?
+        // Swap: Source is Image AND Target is Image
+        const isSwapOperation = sourceBlock.type === BlockType.IMAGE && targetBlock.type === BlockType.IMAGE;
+
+        setBlocksWithCount(prev => {
+            const newBlocks = [...prev];
+
+            if (isSwapOperation) {
+                // Swap logic: Exchange positions directly
+                newBlocks[draggedBlockIndex] = targetBlock;
+                newBlocks[dropIndex] = sourceBlock;
+            } else {
+                // Insert/Push logic: Standard reorder
+                const [movedItem] = newBlocks.splice(draggedBlockIndex, 1);
+                // Adjust index if dragging from top to bottom
+                // But splice-then-splice is safer than index math usually
+                newBlocks.splice(dropIndex, 0, movedItem);
+            }
+            return newBlocks;
+        });
+    }
+
+    setDraggedBlockIndex(null);
+    setTargetBlockIndex(null);
+  };
+
+  // Handler for dropping ON THE CONTAINER (Background) - Append to end
   const handleContainerDrop = (e: React.DragEvent) => {
     e.preventDefault();
     
-    // Check if it's an external file drop
+    // External files -> Append
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
         const files = Array.from(e.dataTransfer.files).filter((f) => (f as File).type.startsWith('image/')) as File[];
         if (files.length === 0) return;
@@ -202,29 +290,25 @@ function App() {
             content: URL.createObjectURL(file),
         }));
 
-        // Determine where to insert
-        // Look for the closest block element to the drop target
-        const targetElement = (e.target as HTMLElement).closest('[data-block-index]');
-        
-        let insertIndex = blocks.length; // Default to end
-        if (targetElement) {
-            const indexStr = targetElement.getAttribute('data-block-index');
-            if (indexStr) {
-                insertIndex = parseInt(indexStr, 10);
-                // Inserting *before* the target by default feels more natural for "push down"
-            }
-        }
-
-        const updatedBlocks = [...blocks];
-        // Splice: insert at index, removing 0
-        updatedBlocks.splice(insertIndex, 0, ...newBlocks);
-        setBlocks(updatedBlocks);
+        setBlocksWithCount(prev => [...prev, ...newBlocks]);
+    } else if (draggedBlockIndex !== null) {
+        // Internal drag dropped on whitespace -> move to end
+        setBlocksWithCount(prev => {
+            const newBlocks = [...prev];
+            const [movedItem] = newBlocks.splice(draggedBlockIndex, 1);
+            newBlocks.push(movedItem);
+            return newBlocks;
+        });
     }
+    setDraggedBlockIndex(null);
+    setTargetBlockIndex(null);
   };
 
   const handleContainerDragOver = (e: React.DragEvent) => {
       e.preventDefault();
-      // Need this to allow dropping on the container background
+      if (e.target === e.currentTarget) {
+         setTargetBlockIndex(null);
+      }
   };
 
   return (
@@ -234,7 +318,6 @@ function App() {
       <div className="bg-white px-6 py-3 rounded-lg shadow-xl mb-8 sticky top-4 z-50 flex flex-wrap gap-6 items-center border border-gray-200">
         
         <div className="flex items-center gap-3 pr-6 border-r border-gray-200">
-           {/* Save / Load Buttons */}
           <button 
             onClick={() => jsonInputRef.current?.click()}
             className="flex items-center gap-2 text-gray-700 hover:text-black hover:bg-gray-100 px-3 py-2 rounded-md text-sm font-medium transition-colors"
@@ -329,19 +412,53 @@ function App() {
                 </div>
             )}
 
-            {blocks.map((block, index) => (
+            {blocks.map((block, index) => {
+                // Determine Visual State
+                const isSource = draggedBlockIndex === index;
+                const isTarget = targetBlockIndex === index && !isSource;
+                
+                let visualClass = '';
+                
+                if (isTarget) {
+                    // Decide Swap vs Insert Visuals
+                    // Case 1: External File Drag -> Always Insert (Green)
+                    // We don't have easy access to 'isExternal' here without checking a global or state, 
+                    // BUT draggedBlockIndex is null during external drag.
+                    const isExternalDrag = draggedBlockIndex === null;
+
+                    if (isExternalDrag) {
+                         visualClass = 'border-t-[4px] border-green-500 pt-0';
+                    } else {
+                        // Internal Drag
+                        const sourceBlock = blocks[draggedBlockIndex];
+                        const targetBlock = blocks[index];
+                        
+                        const isSwapMode = sourceBlock.type === BlockType.IMAGE && targetBlock.type === BlockType.IMAGE;
+
+                        if (isSwapMode) {
+                            // Swap Visual: Blue Border Box
+                            visualClass = 'border-2 border-blue-500 rounded-sm scale-[1.02] z-10';
+                        } else {
+                            // Insert Visual: Green Top Border
+                            visualClass = 'border-t-[4px] border-green-500 pt-0';
+                        }
+                    }
+                }
+
+                return (
                 <div
                     key={block.id}
-                    data-block-index={index} // Used for detecting drop target index
-                    // Disable drag if this block is currently being edited
+                    data-block-index={index} 
                     draggable={editingBlockId !== block.id}
                     onDragStart={(e) => handleDragStart(e, index)}
                     onDragOver={(e) => handleDragOver(e, index)}
+                    onDrop={(e) => handleBlockDrop(e, index)}
                     onDragEnd={handleDragEnd}
                     className={`
                         ${block.type === BlockType.IMAGE ? 'w-[calc(50%-5px)]' : 'w-full'}
-                        transition-transform duration-200 ease-out cursor-move relative
-                        ${draggedBlockIndex === index ? 'opacity-30 scale-95' : 'opacity-100'}
+                        transition-all duration-100 ease-out cursor-move relative
+                        ${isSource ? 'opacity-30 scale-95' : 'opacity-100'}
+                        ${visualClass}
                     `}
                     style={{ marginBottom: `${margin}px` }}
                 >
@@ -349,12 +466,12 @@ function App() {
                         block={block} 
                         onUpdate={updateBlock} 
                         onRemove={removeBlock}
-                        isDragging={draggedBlockIndex === index}
+                        isDragging={isSource}
                         onEditStart={() => setEditingBlockId(block.id)}
                         onEditEnd={() => setEditingBlockId(null)}
                     />
                 </div>
-            ))}
+            )})}
         </div>
       </div>
     </div>
