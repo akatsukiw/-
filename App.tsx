@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { FileDown, Type, Image as ImageIcon, Heading, Save, FolderOpen, MoveHorizontal, HelpCircle, X, MousePointerClick, Scissors, RefreshCw, ArrowDownToLine, Sparkles, History, BookOpen } from 'lucide-react';
 import { Block, BlockType } from './types';
 import { BlockRenderer } from './components/BlockRenderer';
@@ -28,6 +28,11 @@ function App() {
   const [margin, setMargin] = useState(5);
   const [showHelp, setShowHelp] = useState(false);
   const [helpTab, setHelpTab] = useState<'guide' | 'updates'>('guide'); // 'guide' or 'updates'
+  
+  // Scale state for responsive A4 preview
+  const [scale, setScale] = useState(1);
+  const pageContainerRef = useRef<HTMLDivElement>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const jsonInputRef = useRef<HTMLInputElement>(null);
   
@@ -35,6 +40,27 @@ function App() {
   const [draggedBlockIndex, setDraggedBlockIndex] = useState<number | null>(null);
   const [targetBlockIndex, setTargetBlockIndex] = useState<number | null>(null); // Track where we are hovering
   const [editingBlockId, setEditingBlockId] = useState<string | null>(null);
+
+  // --- Resize / Scale Logic ---
+  useEffect(() => {
+    const handleResize = () => {
+        const A4_WIDTH_PX = 794; // Approx 210mm at 96 DPI
+        const SCREEN_PADDING = 32; // 16px padding on each side
+        const availableWidth = window.innerWidth - SCREEN_PADDING;
+
+        if (availableWidth < A4_WIDTH_PX) {
+            const newScale = availableWidth / A4_WIDTH_PX;
+            setScale(newScale);
+        } else {
+            setScale(1);
+        }
+    };
+
+    window.addEventListener('resize', handleResize);
+    handleResize(); // Initial check
+
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // --- Auto Count Logic ---
   const recalculateCounts = (currentBlocks: Block[]): Block[] => {
@@ -120,7 +146,10 @@ function App() {
   };
 
   // --- Margin Scrubber Logic ---
-  const handleMarginScrub = (e: React.MouseEvent) => {
+  const handleMarginScrub = (e: React.MouseEvent | React.TouchEvent) => {
+    // Basic support for touch scrubbing? Maybe later. Mouse for now.
+    if ('touches' in e) return; // Skip touch for this specific scrub interaction logic for now
+    
     e.preventDefault();
     const startX = e.clientX;
     const startMargin = margin;
@@ -367,12 +396,13 @@ function App() {
         }
       `}</style>
       
-      {/* --- Modern Floating Toolbar --- */}
-      <div className="sticky top-4 z-50 mb-8 mx-auto">
-        <div className="flex items-center gap-1.5 p-2 bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-gray-100/50">
+      {/* --- Modern Floating Toolbar (Responsive) --- */}
+      <div className="sticky top-4 z-50 mb-8 max-w-[95vw]">
+        {/* We use whitespace-nowrap and overflow-auto for horizontal scrolling on mobile */}
+        <div className="flex items-center gap-1.5 p-2 bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-gray-100/50 overflow-x-auto no-scrollbar snap-x">
           
           {/* Group 1: File Operations (Colored) */}
-          <div className="flex items-center gap-1.5 px-1">
+          <div className="flex items-center gap-1.5 px-1 shrink-0 snap-start">
              <button 
                 onClick={() => jsonInputRef.current?.click()}
                 className="flex flex-col items-center justify-center w-12 h-12 gap-1 text-orange-600 bg-orange-50 hover:bg-orange-100 rounded-xl transition-all duration-200 border border-orange-100 group"
@@ -391,10 +421,10 @@ function App() {
               </button>
           </div>
 
-          <div className="w-[1px] h-8 bg-gray-200 mx-1"></div>
+          <div className="w-[1px] h-8 bg-gray-200 mx-1 shrink-0"></div>
 
           {/* Group 2: Insert Tools */}
-          <div className="flex items-center gap-1.5 px-1">
+          <div className="flex items-center gap-1.5 px-1 shrink-0 snap-start">
             <button 
               onClick={() => fileInputRef.current?.click()}
               className="flex flex-col items-center justify-center w-12 h-12 gap-1 text-gray-700 hover:text-black hover:bg-gray-100 rounded-xl transition-all duration-200 group"
@@ -421,10 +451,10 @@ function App() {
             </button>
           </div>
 
-          <div className="w-[1px] h-8 bg-gray-200 mx-1"></div>
+          <div className="w-[1px] h-8 bg-gray-200 mx-1 shrink-0"></div>
 
           {/* Group 3: Margin Control (Clean & Scrubbable) */}
-          <div className="flex flex-col justify-center px-2 min-w-[60px]">
+          <div className="flex flex-col justify-center px-2 min-w-[60px] shrink-0 snap-start">
              <div 
                 className="flex items-center gap-1 text-gray-400 hover:text-blue-500 cursor-ew-resize select-none transition-colors group py-1"
                 onMouseDown={handleMarginScrub}
@@ -443,13 +473,13 @@ function App() {
              />
           </div>
 
-          <div className="w-[1px] h-8 bg-gray-200 mx-1"></div>
+          <div className="w-[1px] h-8 bg-gray-200 mx-1 shrink-0"></div>
 
           {/* Group 4: Export & Help */}
-          <div className="flex items-center gap-2 px-1">
+          <div className="flex items-center gap-2 px-1 shrink-0 snap-start">
              <button 
                 onClick={handleExportDocx}
-                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white pl-4 pr-5 py-2.5 rounded-xl text-sm font-semibold shadow-md shadow-blue-200 transition-all active:scale-95"
+                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white pl-4 pr-5 py-2.5 rounded-xl text-sm font-semibold shadow-md shadow-blue-200 transition-all active:scale-95 whitespace-nowrap"
             >
                 <FileDown size={18} />
                 导出 Word
@@ -457,7 +487,7 @@ function App() {
             
             <button 
                 onClick={() => { setShowHelp(true); setHelpTab('guide'); }}
-                className="flex items-center justify-center w-10 h-10 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-full transition-all"
+                className="flex items-center justify-center w-10 h-10 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-full transition-all shrink-0"
                 title="使用帮助"
             >
                 <HelpCircle size={20} />
@@ -473,7 +503,7 @@ function App() {
             onClick={() => setShowHelp(false)}
         >
             <div 
-                className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden border border-gray-100 animate-in zoom-in-95 duration-200"
+                className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden border border-gray-100 animate-in zoom-in-95 duration-200 max-h-[80vh] overflow-y-auto"
                 onClick={e => e.stopPropagation()}
             >
                 {/* Modal Header & Tabs */}
@@ -654,14 +684,17 @@ function App() {
       />
 
       {/* --- Page Container --- */}
-      <div id="page-container" className="flex flex-col items-center w-full overflow-y-auto pb-10">
+      <div id="page-container" className="flex flex-col items-center w-full overflow-y-auto pb-10 px-2 sm:px-0">
         <div 
-            className="a4-page bg-white p-[10mm] box-border flex flex-wrap content-start gap-[10px] shadow-2xl relative transition-all"
+            ref={pageContainerRef}
+            className="a4-page bg-white p-[10mm] box-border flex flex-wrap content-start gap-[10px] shadow-2xl relative transition-all origin-top"
             onDrop={handleContainerDrop}
             onDragOver={handleContainerDragOver}
             style={{ 
                 width: '210mm', 
                 minHeight: '297mm', // A4 Height
+                transform: `scale(${scale})`,
+                marginBottom: `calc(297mm * ${scale - 1})` // Adjust margin to remove ghost space from scaling
             }}
         >
             {blocks.length === 0 && (

@@ -2,11 +2,20 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
     <title>A4 Layout to Word</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-      
+      /* Hide Scrollbar for Chrome/Safari/Opera */
+      .no-scrollbar::-webkit-scrollbar {
+        display: none;
+      }
+      /* Hide Scrollbar for IE, Edge and Firefox */
+      .no-scrollbar {
+        -ms-overflow-style: none;  /* IE and Edge */
+        scrollbar-width: none;  /* Firefox */
+      }
+
       @media print {
         @page { size: A4; margin: 0; }
         body { background: white; }
@@ -17,6 +26,7 @@
           margin: 0 !important;
           border: none !important;
           page-break-after: always;
+          transform: none !important; /* Ensure print uses full size */
         }
       }
     </style>
@@ -33,6 +43,22 @@
     "docx": "https://esm.sh/docx@^9.5.1"
   }
 }
+</script>
+<!-- Mobile Drag and Drop Polyfill -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/mobile-drag-drop@2.3.0-rc.2/default.css">
+<script src="https://cdn.jsdelivr.net/npm/mobile-drag-drop@2.3.0-rc.2/index.min.js"></script>
+<script>
+    // Initialize the polyfill
+    var MobileDragDrop = MobileDragDrop || {};
+    if (typeof MobileDragDrop.polyfill === 'function') {
+        MobileDragDrop.polyfill({
+            dragImageOffset: { x: 0, y: 0 },
+            dragImageCenterOnTouch: true
+        });
+        
+        // Fix for iOS scrolling while dragging
+        window.addEventListener( 'touchmove', function() {}, {passive: false});
+    }
 </script>
 </head>
   <body>
